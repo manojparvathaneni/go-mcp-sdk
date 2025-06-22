@@ -1,0 +1,109 @@
+name: Comprehensive Test Suite
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    # Run nightly at 2 AM UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+
+env:
+  GO_VERSION: '1.21'
+  RESULTS_DIR: test-results
+
+jobs:
+  test:
+    name: Run Comprehensive Tests
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: ${{ env.GO_VERSION }}
+        
+    - name: Cache Go modules
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cache/go-build
+          ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
+          
+    - name: Install dependencies
+      run: |
+        go mod download
+        go install github.com/jstemmer/go-junit-report/v2@latest
+        
+    - name: Run comprehensive test suite
+      run: ./scripts/testing/ci_runner.sh
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        
+    - name: Upload test results
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: test-results
+        path: test-results/
+        retention-days: 30
+        
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      if: always()
+      with:
+        file: ./test-results/coverage-*.out
+        flags: unittests
+        name: codecov-umbrella
+        
+    - name: Comment PR with results
+      uses: actions/github-script@v6
+      if: github.event_name == 'pull_request'
+      with:
+        script: |
+          const fs = require('fs');
+          const analysis = JSON.parse(fs.readFileSync('test-results/ci-summary.json', 'utf8'));
+          
+          const comment = `## Test Results Summary
+          
+          **Health Score:** ${analysis.health_score}% ${analysis.health_score >= 80 ? '✅' : analysis.health_score >= 60 ? '⚠️' : '❌'}
+          
+          **Metrics:**
+          - Test Pass Rate: ${analysis.metrics.test_pass_rate}%
+          - Code Coverage: ${analysis.metrics.code_coverage}%
+          - Execution Time: ${analysis.metrics.total_execution_time}s
+          
+          **Issues:**
+          - Critical: ${analysis.critical_issues_count}
+          - Warnings: ${analysis.warnings_count}
+          
+          [View detailed results](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})`;
+          
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: comment
+          });
+          
+    - name: Create test summary
+      if: always()
+      run: |
+        echo "## Test Execution Summary" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        if [ -f test-results/ci-summary.json ]; then
+          echo "**Health Score:** $(jq -r .health_score test-results/ci-summary.json)%" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Metrics" >> $GITHUB_STEP_SUMMARY
+          echo "- Test Pass Rate: $(jq -r .metrics.test_pass_rate test-results/ci-summary.json)%" >> $GITHUB_STEP_SUMMARY
+          echo "- Code Coverage: $(jq -r .metrics.code_coverage test-results/ci-summary.json)%" >> $GITHUB_STEP_SUMMARY
+          echo "- Total Tests: $(jq -r .metrics.total_tests test-results/ci-summary.json // 0)" >> $GITHUB_STEP_SUMMARY
+        fi

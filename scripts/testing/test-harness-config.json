@@ -1,0 +1,12 @@
+{
+    "server_command": ["go", "run", "./examples/simple-server/main.go"],
+    "server_timeout": 10000000000,
+    "test_timeout": 30000000000,
+    "warmup_duration": 2000000000,
+    "strict_compliance": true,
+    "required_methods": ["resources/list", "tools/list"],
+    "optional_methods": ["prompts/list"],
+    "output_format": "json",
+    "output_file": "/Users/manojpa/Claude/mcp-go/test-results/harness-results-20250621_145000.json",
+    "continue_on_failure": true
+}

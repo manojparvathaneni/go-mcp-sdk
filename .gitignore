@@ -1,0 +1,9 @@
+.claude
+~DS_Store
+test-results/
+docs_old
+examples_old
+AI_DEVELOPMENT.md
+EXAMPLES.md
+README.md
+**/doc.go
